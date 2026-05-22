@@ -1,0 +1,405 @@
+import {
+    AfterViewInit,
+    ChangeDetectorRef,
+    ChangeDetectionStrategy,
+    Component,
+    OnDestroy,
+    OnInit,
+    ViewChild,
+    ViewEncapsulation
+} from '@angular/core';
+import {Subject, Subscription} from 'rxjs';
+import {switchMap, takeUntil} from 'rxjs/operators';
+import {ApexOptions, ChartComponent} from 'ng-apexcharts';
+import {CollectStatusResponse, DashboardService} from 'app/modules/dashboard/dashboard.service';
+import {MatDialog} from '@angular/material/dialog';
+import {DashboardSettingsComponent} from 'app/layout/common/dashboard-settings/dashboard-settings.component';
+import {AppConfig} from 'app/core/config/app.config';
+import {ScrutinyConfigService} from 'app/core/config/scrutiny-config.service';
+import {Router} from '@angular/router';
+import {TemperaturePipe} from 'app/shared/temperature.pipe';
+import {DeviceTitlePipe} from 'app/shared/device-title.pipe';
+import {DeviceSummaryModel} from 'app/core/models/device-summary-model';
+import {MatSnackBar} from '@angular/material/snack-bar';
+import {timer} from 'rxjs';
+
+@Component({
+    selector       : 'example',
+    templateUrl    : './dashboard.component.html',
+    styleUrls      : ['./dashboard.component.scss'],
+    encapsulation  : ViewEncapsulation.None,
+    changeDetection: ChangeDetectionStrategy.OnPush
+})
+export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
+{
+    summaryData: { [key: string]: DeviceSummaryModel };
+    hostGroups: { [hostId: string]: string[] } = {}
+    temperatureOptions: ApexOptions;
+    tempDurationKey = 'week'
+    config: AppConfig;
+    showArchived: boolean;
+    collectRunning = false;
+    private lastCollectExitCode: number;
+    private collectStatusSubscription: Subscription;
+
+    // Private
+    private _unsubscribeAll: Subject<void>;
+    @ViewChild('tempChart', { static: false }) tempChart: ChartComponent;
+
+    /**
+     * Constructor
+     *
+     * @param {DashboardService} _dashboardService
+     * @param {ScrutinyConfigService} _configService
+     * @param {MatDialog} dialog
+     * @param {Router} router
+     */
+    constructor(
+        private _dashboardService: DashboardService,
+        private _configService: ScrutinyConfigService,
+        public dialog: MatDialog,
+        private router: Router,
+        private _snackBar: MatSnackBar,
+        private _changeDetectorRef: ChangeDetectorRef,
+    )
+    {
+        // Set the private defaults
+        this._unsubscribeAll = new Subject();
+
+    }
+
+    // -----------------------------------------------------------------------------------------------------
+    // @ Lifecycle hooks
+    // -----------------------------------------------------------------------------------------------------
+
+    /**
+     * On init
+     */
+    ngOnInit(): void
+    {
+
+        // Subscribe to config changes
+        this._configService.config$
+            .pipe(takeUntil(this._unsubscribeAll))
+            .subscribe((config: AppConfig) => {
+
+                // check if the old config and the new config do not match.
+                const oldConfig = JSON.stringify(this.config)
+                const newConfig = JSON.stringify(config)
+
+                if(oldConfig !== newConfig){
+                    console.log(`Configuration updated: ${newConfig} vs ${oldConfig}`)
+                    // Store the config
+                    this.config = config;
+
+                    if(oldConfig){
+                        console.log('reloading component...')
+                        this.refreshComponent()
+                    }
+                }
+            });
+
+        // Get the data
+        this._dashboardService.data$
+            .pipe(takeUntil(this._unsubscribeAll))
+            .subscribe((data) => {
+
+                // Store the data
+                this.summaryData = data;
+                this.hostGroups = {};
+
+                // generate group data.
+                for (const scrutiny_uuid in this.summaryData) {
+                    const hostid = this.summaryData[scrutiny_uuid].device.host_id
+                    const hostDeviceList = this.hostGroups[hostid] || []
+                    hostDeviceList.push(scrutiny_uuid)
+                    this.hostGroups[hostid] = hostDeviceList
+                }
+                console.log(this.hostGroups)
+
+                // Prepare the chart data
+                this._prepareChartData();
+            });
+
+        this._dashboardService.getCollectionStatus().subscribe((status: CollectStatusResponse) => {
+            this.collectRunning = status.running;
+            this._changeDetectorRef.markForCheck();
+        });
+    }
+
+    /**
+     * After view init
+     */
+    ngAfterViewInit(): void
+    {}
+
+    /**
+     * On destroy
+     */
+    ngOnDestroy(): void
+    {
+        if (this.collectStatusSubscription) {
+            this.collectStatusSubscription.unsubscribe();
+        }
+        // Unsubscribe from all subscriptions
+        this._unsubscribeAll.next();
+        this._unsubscribeAll.complete();
+    }
+
+    // -----------------------------------------------------------------------------------------------------
+    // @ Private methods
+    // -----------------------------------------------------------------------------------------------------
+    private refreshComponent(): void {
+
+        const currentUrl = this.router.url;
+        this.router.routeReuseStrategy.shouldReuseRoute = () => false;
+        this.router.onSameUrlNavigation = 'reload';
+        this.router.navigate([currentUrl]);
+    }
+
+    private _deviceDataTemperatureSeries(): any[] {
+        const deviceTemperatureSeries = []
+
+        console.log('DEVICE DATA SUMMARY', this.summaryData)
+
+        for (const scrutiny_uuid in this.summaryData) {
+            const deviceSummary = this.summaryData[scrutiny_uuid]
+            if (!deviceSummary.temp_history) {
+                continue
+            }
+
+            const deviceName = DeviceTitlePipe.deviceTitleWithFallback(deviceSummary.device, this.config.dashboard_display)
+
+            const deviceSeriesMetadata = {
+                name: deviceName,
+                data: []
+            }
+
+            for(const tempHistory of deviceSummary.temp_history){
+                const newDate = new Date(tempHistory.date);
+                let temperature;
+                switch (this.config.temperature_unit) {
+                    case 'celsius':
+                        temperature = tempHistory.temp;
+                        break
+                    case 'fahrenheit':
+                        temperature = TemperaturePipe.celsiusToFahrenheit(tempHistory.temp)
+                        break
+                }
+                deviceSeriesMetadata.data.push({
+                    x: newDate,
+                    y: temperature
+                })
+            }
+            deviceTemperatureSeries.push(deviceSeriesMetadata)
+        }
+        return deviceTemperatureSeries
+    }
+    /**
+     * Prepare the chart data from the data
+     *
+     * @private
+     */
+    private _prepareChartData(): void
+    {
+        // Account balance
+        this.temperatureOptions = {
+            chart  : {
+                animations: {
+                    speed           : 400,
+                    animateGradually: {
+                        enabled: false
+                    }
+                },
+                fontFamily: 'inherit',
+                foreColor : 'inherit',
+                width     : '100%',
+                height    : '100%',
+                type      : 'area',
+                sparkline : {
+                    enabled: true
+                }
+            },
+            colors : ['#667eea', '#9066ea', '#66c0ea', '#66ead2', '#d266ea', '#66ea90'],
+            fill   : {
+                colors : ['#b2bef4', '#c7b2f4', '#b2dff4', '#b2f4e8', '#e8b2f4', '#b2f4c7'],
+                opacity: 0.5,
+                type   : 'gradient'
+            },
+            series : this._deviceDataTemperatureSeries(),
+            stroke : {
+                curve: this.config.line_stroke,
+                width: 2
+            },
+            tooltip: {
+                theme: 'dark',
+                shared: true,
+                intersect: false,
+                x    : {
+                    format: 'MMM dd, yyyy HH:mm:ss'
+                },
+                y    : {
+
+                    formatter: (value) => {
+                        return TemperaturePipe.formatTemperature(value, this.config.temperature_unit, true) as string;
+                    }
+                }
+            },
+            xaxis: {
+                type: 'datetime',
+                labels: {
+                    datetimeUTC: false
+                }
+            }
+        };
+    }
+
+    // -----------------------------------------------------------------------------------------------------
+    // @ Public methods
+    // -----------------------------------------------------------------------------------------------------
+
+    deviceSummariesForHostGroup(hostGroupScrutinyUUIDs: string[]): DeviceSummaryModel[] {
+        const deviceSummaries: DeviceSummaryModel[] = []
+        for (const scrutiny_uuid of hostGroupScrutinyUUIDs) {
+            if (this.summaryData[scrutiny_uuid]) {
+                deviceSummaries.push(this.summaryData[scrutiny_uuid])
+            }
+        }
+        return deviceSummaries
+    }
+
+    openDialog(): void {
+        const dialogRef = this.dialog.open(DashboardSettingsComponent, {width: '600px',});
+
+        dialogRef.afterClosed().subscribe(result => {
+            console.log(`Dialog result: ${result}`);
+        });
+    }
+
+    collectNow(): void {
+        this.collectRunning = true;
+        this._changeDetectorRef.markForCheck();
+        this._dashboardService.runCollection().subscribe({
+            next: () => {
+                this.startStatusPolling(false);
+            },
+            error: (err) => {
+                this.collectRunning = false;
+                this._changeDetectorRef.markForCheck();
+                const errorText = err?.error?.error || 'Failed to start collection';
+                this._snackBar.open(errorText, 'Close', {duration: 5000});
+            }
+        });
+    }
+
+    refreshTemperature(): void {
+        this.collectRunning = true;
+        this._changeDetectorRef.markForCheck();
+        this._dashboardService.runCollection().subscribe({
+            next: () => {
+                this.startStatusPolling(true);
+            },
+            error: (err) => {
+                this.collectRunning = false;
+                this._changeDetectorRef.markForCheck();
+                const errorText = err?.error?.error || 'Failed to start collection';
+                this._snackBar.open(errorText, 'Close', {duration: 5000});
+            }
+        });
+    }
+
+    private startStatusPolling(refreshTempsOnly: boolean): void {
+        if (this.collectStatusSubscription) {
+            this.collectStatusSubscription.unsubscribe();
+        }
+
+        this.collectStatusSubscription = timer(0, 2000).pipe(
+            switchMap(() => this._dashboardService.getCollectionStatus()),
+            takeUntil(this._unsubscribeAll)
+        ).subscribe({
+            next: (status: CollectStatusResponse) => {
+                this.collectRunning = status.running;
+                this._changeDetectorRef.markForCheck();
+
+                if (status.running) {
+                    return;
+                }
+
+                if (this.collectStatusSubscription) {
+                    this.collectStatusSubscription.unsubscribe();
+                }
+
+                if (refreshTempsOnly) {
+                    this._dashboardService.getSummaryData().subscribe();
+                } else {
+                    this._dashboardService.getSummaryData().subscribe();
+                    this.changeSummaryTempDuration(this.tempDurationKey);
+                }
+
+                if (status.lastExitCode === 0) {
+                    this._snackBar.open('Collection completed', 'Close', {duration: 4000});
+                } else if (this.lastCollectExitCode !== status.lastExitCode) {
+                    this._snackBar.open(`Collection failed (exit code ${status.lastExitCode})`, 'Close', {duration: 5000});
+                }
+                this.lastCollectExitCode = status.lastExitCode;
+            },
+            error: () => {
+                if (this.collectStatusSubscription) {
+                    this.collectStatusSubscription.unsubscribe();
+                }
+                this.collectRunning = false;
+                this._changeDetectorRef.markForCheck();
+                this._snackBar.open('Failed to get collection status', 'Close', {duration: 5000});
+            }
+        });
+    }
+
+    onDeviceDeleted(scrutiny_uuid: string): void {
+        delete this.summaryData[scrutiny_uuid] // remove the device from the summary list.
+    }
+
+    onDeviceArchived(scrutiny_uuid: string): void {
+        this.summaryData[scrutiny_uuid].device.archived = true;
+    }
+
+    onDeviceUnarchived(scrutiny_uuid: string): void {
+        this.summaryData[scrutiny_uuid].device.archived = false;
+    }
+
+    /*
+    DURATION_KEY_DAY    = "day"
+    DURATION_KEY_WEEK    = "week"
+    DURATION_KEY_MONTH   = "month"
+    DURATION_KEY_YEAR    = "year"
+    DURATION_KEY_FOREVER = "forever"
+     */
+
+    changeSummaryTempDuration(durationKey: string): void {
+        this.tempDurationKey = durationKey
+
+        this._dashboardService.getSummaryTempData(durationKey)
+            .subscribe((tempHistoryData) => {
+
+                // given a list of device temp history, override the data in the "summary" object.
+                for (const scrutiny_uuid in this.summaryData) {
+                    // console.log(`Updating ${scrutiny_uuid}, length: ${this.data.data.summary[scrutiny_uuid].temp_history.length}`)
+                    this.summaryData[scrutiny_uuid].temp_history = tempHistoryData[scrutiny_uuid] || []
+                }
+
+                // Prepare the chart series data
+                this.tempChart.updateSeries(this._deviceDataTemperatureSeries())
+            });
+    }
+
+    /**
+     * Track by function for ngFor loops
+     *
+     * @param index
+     * @param item
+     */
+    trackByFn(index: number, item: any): any
+    {
+        return item.id || index;
+    }
+
+}
