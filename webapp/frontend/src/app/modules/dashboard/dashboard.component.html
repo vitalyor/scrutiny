@@ -40,10 +40,10 @@
                     </button>
                     <button class="ml-2 xs:hidden"
                             mat-stroked-button
-                            [disabled]="collectRunning"
+                            [disabled]="collectRunning || tempRefreshRunning"
                             (click)="refreshTemperature()">
                         <mat-icon class="icon-size-20" [svgIcon]="'refresh'"></mat-icon>
-                        <span class="ml-2">Refresh temperature</span>
+                        <span class="ml-2">{{ tempRefreshRunning ? 'Refreshing…' : 'Refresh temperature' }}</span>
                     </button>
                     <button class="ml-2 xs:hidden"
                             mat-stroked-button
@@ -92,11 +92,11 @@
                                 <span class="ml-2">{{ collectRunning ? 'Collecting…' : 'Collect now' }}</span>
                             </button>
                             <button mat-menu-item
-                                    [disabled]="collectRunning"
+                                    [disabled]="collectRunning || tempRefreshRunning"
                                     (click)="refreshTemperature()">
                                 <mat-icon class="icon-size-20"
                                           [svgIcon]="'refresh'"></mat-icon>
-                                <span class="ml-2">Refresh temperature</span>
+                                <span class="ml-2">{{ tempRefreshRunning ? 'Refreshing…' : 'Refresh temperature' }}</span>
                             </button>
                             <button mat-menu-item [matMenuTriggerFor]="autoTempMenuMobile">
                                 <mat-icon class="icon-size-20" [svgIcon]="'schedule'"></mat-icon>

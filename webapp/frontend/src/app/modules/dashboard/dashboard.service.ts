@@ -22,6 +22,15 @@ export interface CollectStatusResponse {
     lastExitCode?: number;
 }
 
+export interface TemperatureSnapshotResponse {
+    ok: boolean;
+    data?: {
+        temps: { [scrutinyUUID: string]: { temp: number; date: string } };
+        collectedAt: string;
+    };
+    error?: string;
+}
+
 @Injectable({
     providedIn: 'root'
 })
@@ -91,6 +100,10 @@ export class DashboardService {
 
     runTemperatureCollection(): Observable<CollectRunResponse> {
         return this._httpClient.post<CollectRunResponse>(getBasePath() + '/api/collect/run-temp', {});
+    }
+
+    getTemperatureSnapshot(): Observable<TemperatureSnapshotResponse> {
+        return this._httpClient.get<TemperatureSnapshotResponse>(getBasePath() + '/api/collect/temp');
     }
 
     getCollectionStatus(): Observable<CollectStatusResponse> {
