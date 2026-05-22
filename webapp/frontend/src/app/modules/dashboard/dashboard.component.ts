@@ -358,14 +358,21 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
                     this.collectStatusSubscription.unsubscribe();
                 }
 
-                this.refreshAfterCollection(refreshTempsOnly, 0);
-
                 if (showToast && status.lastExitCode === 0) {
                     this._snackBar.open('Collection completed', 'Close', {duration: 4000});
                 } else if (showToast && this.lastCollectExitCode !== status.lastExitCode) {
                     this._snackBar.open(`Collection failed (exit code ${status.lastExitCode})`, 'Close', {duration: 5000});
                 }
                 this.lastCollectExitCode = status.lastExitCode;
+
+                if (!refreshTempsOnly && status.lastExitCode === 0) {
+                    setTimeout(() => window.location.reload(), 400);
+                    return;
+                }
+
+                if (refreshTempsOnly) {
+                    this.refreshAfterCollection(true, 0);
+                }
             },
             error: () => {
                 if (this.collectStatusSubscription) {
