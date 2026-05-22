@@ -40,8 +40,18 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
     config: AppConfig;
     showArchived: boolean;
     collectRunning = false;
-    autoRefreshMinutes = 0;
-    readonly autoRefreshOptions = [0, 1, 2, 5, 10, 15, 30];
+    autoRefreshIntervalMs = 0;
+    readonly autoRefreshOptions = [
+        {label: '1 s', valueMs: 1000},
+        {label: '5 s', valueMs: 5000},
+        {label: '30 s', valueMs: 30000},
+        {label: '1 m', valueMs: 60000},
+        {label: '2 m', valueMs: 120000},
+        {label: '5 m', valueMs: 300000},
+        {label: '10 m', valueMs: 600000},
+        {label: '15 m', valueMs: 900000},
+        {label: '30 m', valueMs: 1800000},
+    ];
     private lastCollectExitCode: number;
     private collectStatusSubscription: Subscription;
     private autoTempRefreshSubscription: Subscription;
@@ -361,11 +371,19 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
         });
     }
 
-    onAutoRefreshIntervalChange(minutes: number): void {
-        this.autoRefreshMinutes = minutes;
+    onAutoRefreshIntervalChange(intervalMs: number): void {
+        this.autoRefreshIntervalMs = intervalMs;
         this.stopAutoTempRefresh();
         this.startAutoTempRefresh();
         this._changeDetectorRef.markForCheck();
+    }
+
+    getAutoRefreshLabel(): string {
+        if (this.autoRefreshIntervalMs === 0) {
+            return 'off';
+        }
+        const selectedOption = this.autoRefreshOptions.find((item) => item.valueMs === this.autoRefreshIntervalMs);
+        return selectedOption ? selectedOption.label : 'off';
     }
 
     @HostListener('document:visibilitychange')
@@ -378,11 +396,11 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
     }
 
     private startAutoTempRefresh(): void {
-        if (document.visibilityState !== 'visible' || this.autoRefreshMinutes <= 0 || this.autoTempRefreshSubscription) {
+        if (document.visibilityState !== 'visible' || this.autoRefreshIntervalMs <= 0 || this.autoTempRefreshSubscription) {
             return;
         }
 
-        this.autoTempRefreshSubscription = timer(this.autoRefreshMinutes * 60 * 1000, this.autoRefreshMinutes * 60 * 1000)
+        this.autoTempRefreshSubscription = timer(this.autoRefreshIntervalMs, this.autoRefreshIntervalMs)
             .pipe(takeUntil(this._unsubscribeAll))
             .subscribe(() => {
                 if (!this.collectRunning && document.visibilityState === 'visible') {

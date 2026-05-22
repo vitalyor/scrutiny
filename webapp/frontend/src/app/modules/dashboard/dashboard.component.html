@@ -49,12 +49,13 @@
                             mat-stroked-button
                             [matMenuTriggerFor]="autoTempMenu">
                         <mat-icon class="icon-size-20" [svgIcon]="'schedule'"></mat-icon>
-                        <span class="ml-2">Auto temp: {{ autoRefreshMinutes === 0 ? 'off' : (autoRefreshMinutes + 'm') }}</span>
+                        <span class="ml-2">Auto temp: {{ getAutoRefreshLabel() }}</span>
                     </button>
                     <mat-menu #autoTempMenu="matMenu">
-                        <button mat-menu-item *ngFor="let minutes of autoRefreshOptions"
-                                (click)="onAutoRefreshIntervalChange(minutes)">
-                            {{ minutes === 0 ? 'Off' : (minutes + ' min') }}
+                        <button mat-menu-item (click)="onAutoRefreshIntervalChange(0)">Off</button>
+                        <button mat-menu-item *ngFor="let option of autoRefreshOptions"
+                                (click)="onAutoRefreshIntervalChange(option.valueMs)">
+                            {{ option.label }}
                         </button>
                     </mat-menu>
 
@@ -99,13 +100,14 @@
                             </button>
                             <button mat-menu-item [matMenuTriggerFor]="autoTempMenuMobile">
                                 <mat-icon class="icon-size-20" [svgIcon]="'schedule'"></mat-icon>
-                                <span class="ml-2">Auto temp: {{ autoRefreshMinutes === 0 ? 'off' : (autoRefreshMinutes + 'm') }}</span>
+                                <span class="ml-2">Auto temp: {{ getAutoRefreshLabel() }}</span>
                             </button>
                         </mat-menu>
                         <mat-menu #autoTempMenuMobile="matMenu">
-                            <button mat-menu-item *ngFor="let minutes of autoRefreshOptions"
-                                    (click)="onAutoRefreshIntervalChange(minutes)">
-                                {{ minutes === 0 ? 'Off' : (minutes + ' min') }}
+                            <button mat-menu-item (click)="onAutoRefreshIntervalChange(0)">Off</button>
+                            <button mat-menu-item *ngFor="let option of autoRefreshOptions"
+                                    (click)="onAutoRefreshIntervalChange(option.valueMs)">
+                                {{ option.label }}
                             </button>
                         </mat-menu>
                     </div>
