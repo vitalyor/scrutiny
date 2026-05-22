@@ -41,6 +41,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
     collectRunning = false;
     private lastCollectExitCode: number;
     private collectStatusSubscription: Subscription;
+    private collectBaselineTimestamp = 0;
 
     // Private
     private _unsubscribeAll: Subject<void>;
@@ -277,6 +278,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
     }
 
     collectNow(): void {
+        this.collectBaselineTimestamp = this.latestCollectorTimestamp();
         this.collectRunning = true;
         this._changeDetectorRef.markForCheck();
         this._dashboardService.runCollection().subscribe({
@@ -293,6 +295,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
     }
 
     refreshTemperature(): void {
+        this.collectBaselineTimestamp = this.latestCollectorTimestamp();
         this.collectRunning = true;
         this._changeDetectorRef.markForCheck();
         this._dashboardService.runCollection().subscribe({
@@ -329,12 +332,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
                     this.collectStatusSubscription.unsubscribe();
                 }
 
-                if (refreshTempsOnly) {
-                    this._dashboardService.getSummaryData().subscribe();
-                } else {
-                    this._dashboardService.getSummaryData().subscribe();
-                    this.changeSummaryTempDuration(this.tempDurationKey);
-                }
+                this.refreshAfterCollection(refreshTempsOnly, 0);
 
                 if (status.lastExitCode === 0) {
                     this._snackBar.open('Collection completed', 'Close', {duration: 4000});
@@ -352,6 +350,42 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
                 this._snackBar.open('Failed to get collection status', 'Close', {duration: 5000});
             }
         });
+    }
+
+    private refreshAfterCollection(refreshTempsOnly: boolean, attempt: number): void {
+        this._dashboardService.getSummaryData().subscribe(() => {
+            const currentTimestamp = this.latestCollectorTimestamp();
+            const hasNewData = currentTimestamp > this.collectBaselineTimestamp;
+
+            if (!hasNewData && attempt < 5) {
+                setTimeout(() => this.refreshAfterCollection(refreshTempsOnly, attempt + 1), 2000);
+                return;
+            }
+
+            if (!refreshTempsOnly) {
+                this.changeSummaryTempDuration(this.tempDurationKey);
+            }
+        });
+    }
+
+    private latestCollectorTimestamp(): number {
+        if (!this.summaryData) {
+            return 0;
+        }
+
+        let latest = 0;
+        for (const scrutinyUUID in this.summaryData) {
+            const collectorDate = this.summaryData[scrutinyUUID]?.smart?.collector_date;
+            if (!collectorDate) {
+                continue;
+            }
+
+            const ts = new Date(collectorDate).getTime();
+            if (!Number.isNaN(ts) && ts > latest) {
+                latest = ts;
+            }
+        }
+        return latest;
     }
 
     onDeviceDeleted(scrutiny_uuid: string): void {
