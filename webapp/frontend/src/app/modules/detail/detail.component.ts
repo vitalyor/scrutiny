@@ -8,12 +8,10 @@ import {MatDialog} from '@angular/material/dialog';
 import {MatSort} from '@angular/material/sort';
 import {MatTableDataSource} from '@angular/material/table';
 import {Subject} from 'rxjs';
-import {Subscription, timer} from 'rxjs';
 import {ScrutinyConfigService} from 'app/core/config/scrutiny-config.service';
 import {animate, state, style, transition, trigger} from '@angular/animations';
 import {formatDate} from '@angular/common';
 import {takeUntil} from 'rxjs/operators';
-import {switchMap} from 'rxjs/operators';
 import {DeviceModel} from 'app/core/models/device-model';
 import {SmartModel} from 'app/core/models/measurements/smart-model';
 import {SmartAttributeModel} from 'app/core/models/measurements/smart-attribute-model';
@@ -94,7 +92,6 @@ export class DetailComponent implements OnInit, AfterViewInit, OnDestroy {
     private _unsubscribeAll: Subject<void>;
     private systemPrefersDark: boolean;
     collectRunning = false;
-    private collectStatusSubscription: Subscription;
 
     readonly humanizeDuration = humanizeDuration;
 
@@ -147,9 +144,6 @@ export class DetailComponent implements OnInit, AfterViewInit, OnDestroy {
      * On destroy
      */
     ngOnDestroy(): void {
-        if (this.collectStatusSubscription) {
-            this.collectStatusSubscription.unsubscribe();
-        }
         // Unsubscribe from all subscriptions
         this._unsubscribeAll.next();
         this._unsubscribeAll.complete();
@@ -157,39 +151,19 @@ export class DetailComponent implements OnInit, AfterViewInit, OnDestroy {
 
     refreshTemperature(): void {
         this.collectRunning = true;
-        this._dashboardService.runTemperatureCollection().subscribe({
-            next: () => this.startStatusPolling(),
+        this._dashboardService.getTemperatureSnapshot().subscribe({
+            next: (response) => {
+                const tempData = response?.data?.temps?.[this.device.scrutiny_uuid];
+                if (tempData && this.smart_results?.length > 0) {
+                    this.smart_results[0].temp = tempData.temp;
+                }
+                this.collectRunning = false;
+                this._snackBar.open('Temperature updated', 'Close', {duration: 2500});
+            },
             error: (err) => {
                 this.collectRunning = false;
                 const errorText = err?.error?.error || 'Failed to start collection';
                 this._snackBar.open(errorText, 'Close', {duration: 5000});
-            }
-        });
-    }
-
-    private startStatusPolling(): void {
-        if (this.collectStatusSubscription) {
-            this.collectStatusSubscription.unsubscribe();
-        }
-
-        this.collectStatusSubscription = timer(0, 2000).pipe(
-            switchMap(() => this._dashboardService.getCollectionStatus()),
-            takeUntil(this._unsubscribeAll)
-        ).subscribe((status) => {
-            this.collectRunning = status.running;
-            if (status.running) {
-                return;
-            }
-
-            if (this.collectStatusSubscription) {
-                this.collectStatusSubscription.unsubscribe();
-            }
-
-            this._detailService.getData(this.device.scrutiny_uuid).subscribe();
-            if (status.lastExitCode === 0) {
-                this._snackBar.open('Collection completed', 'Close', {duration: 4000});
-            } else {
-                this._snackBar.open(`Collection failed (exit code ${status.lastExitCode})`, 'Close', {duration: 5000});
             }
         });
     }

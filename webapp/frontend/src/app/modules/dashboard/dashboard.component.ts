@@ -12,7 +12,7 @@ import {
 import {Subject, Subscription} from 'rxjs';
 import {switchMap, takeUntil} from 'rxjs/operators';
 import {ApexOptions, ChartComponent} from 'ng-apexcharts';
-import {CollectStatusResponse, DashboardService} from 'app/modules/dashboard/dashboard.service';
+import {CollectStatusResponse, DashboardService, TemperatureSnapshotResponse} from 'app/modules/dashboard/dashboard.service';
 import {MatDialog} from '@angular/material/dialog';
 import {DashboardSettingsComponent} from 'app/layout/common/dashboard-settings/dashboard-settings.component';
 import {AppConfig} from 'app/core/config/app.config';
@@ -40,6 +40,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
     config: AppConfig;
     showArchived: boolean;
     collectRunning = false;
+    tempRefreshRunning = false;
     autoRefreshIntervalMs = 0;
     readonly autoRefreshOptions = [
         {label: '1 s', valueMs: 1000},
@@ -310,15 +311,23 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
     }
 
     refreshTemperature(showToast: boolean = true): void {
-        this.collectBaselineTimestamp = this.latestCollectorTimestamp();
-        this.collectRunning = true;
+        this.tempRefreshRunning = true;
         this._changeDetectorRef.markForCheck();
-        this._dashboardService.runTemperatureCollection().subscribe({
-            next: () => {
-                this.startStatusPolling(true, showToast);
+        this._dashboardService.getTemperatureSnapshot().subscribe({
+            next: (response: TemperatureSnapshotResponse) => {
+                if (response?.data?.temps) {
+                    this.applyTemperatureSnapshot(response.data.temps);
+                    if (showToast) {
+                        this._snackBar.open('Temperature updated', 'Close', {duration: 2500});
+                    }
+                } else if (showToast) {
+                    this._snackBar.open('Temperature data unavailable', 'Close', {duration: 3500});
+                }
+                this.tempRefreshRunning = false;
+                this._changeDetectorRef.markForCheck();
             },
             error: (err) => {
-                this.collectRunning = false;
+                this.tempRefreshRunning = false;
                 this._changeDetectorRef.markForCheck();
                 if (showToast) {
                     const errorText = err?.error?.error || 'Failed to start collection';
@@ -403,7 +412,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
         this.autoTempRefreshSubscription = timer(this.autoRefreshIntervalMs, this.autoRefreshIntervalMs)
             .pipe(takeUntil(this._unsubscribeAll))
             .subscribe(() => {
-                if (!this.collectRunning && document.visibilityState === 'visible') {
+                if (!this.collectRunning && !this.tempRefreshRunning && document.visibilityState === 'visible') {
                     this.refreshTemperature(false);
                 }
             });
@@ -450,6 +459,22 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
             }
         }
         return latest;
+    }
+
+    private applyTemperatureSnapshot(temps: { [scrutinyUUID: string]: { temp: number; date: string } }): void {
+        if (!this.summaryData) {
+            return;
+        }
+
+        for (const scrutinyUUID in temps) {
+            if (!this.summaryData[scrutinyUUID]) {
+                continue;
+            }
+            if (!this.summaryData[scrutinyUUID].smart) {
+                this.summaryData[scrutinyUUID].smart = {};
+            }
+            this.summaryData[scrutinyUUID].smart.temp = temps[scrutinyUUID].temp;
+        }
     }
 
     onDeviceDeleted(scrutiny_uuid: string): void {
