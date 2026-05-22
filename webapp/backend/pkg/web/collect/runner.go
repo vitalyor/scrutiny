@@ -18,6 +18,7 @@ const (
 
 type Status struct {
 	Running      bool       `json:"running"`
+	Mode         string     `json:"mode"`
 	StartedAt    *time.Time `json:"startedAt"`
 	FinishedAt   *time.Time `json:"finishedAt"`
 	LastExitCode *int       `json:"lastExitCode"`
@@ -36,6 +37,14 @@ func NewRunner(logger *logrus.Entry) *Runner {
 }
 
 func (r *Runner) Start() (bool, error) {
+	return r.start("full")
+}
+
+func (r *Runner) StartTemperatureOnly() (bool, error) {
+	return r.start("temperature")
+}
+
+func (r *Runner) start(mode string) (bool, error) {
 	r.mu.Lock()
 	if r.status.Running {
 		r.mu.Unlock()
@@ -44,11 +53,12 @@ func (r *Runner) Start() (bool, error) {
 
 	start := time.Now().UTC()
 	r.status.Running = true
+	r.status.Mode = mode
 	r.status.StartedAt = &start
 	r.status.FinishedAt = nil
 	r.mu.Unlock()
 
-	go r.runCollector(start)
+	go r.runCollector(start, mode)
 
 	return true, nil
 }
@@ -60,11 +70,15 @@ func (r *Runner) GetStatus() Status {
 	return r.status
 }
 
-func (r *Runner) runCollector(startedAt time.Time) {
+func (r *Runner) runCollector(startedAt time.Time, mode string) {
 	ctx, cancel := context.WithTimeout(context.Background(), collectorTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, collectorBinaryPath, "run")
+	args := []string{"run"}
+	if mode == "temperature" {
+		args = append(args, "--temperature-only")
+	}
+	cmd := exec.CommandContext(ctx, collectorBinaryPath, args...)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout

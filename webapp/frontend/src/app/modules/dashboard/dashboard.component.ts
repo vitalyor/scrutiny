@@ -3,6 +3,7 @@ import {
     ChangeDetectorRef,
     ChangeDetectionStrategy,
     Component,
+    HostListener,
     OnDestroy,
     OnInit,
     ViewChild,
@@ -39,8 +40,11 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
     config: AppConfig;
     showArchived: boolean;
     collectRunning = false;
+    autoRefreshMinutes = 0;
+    readonly autoRefreshOptions = [0, 1, 2, 5, 10, 15, 30];
     private lastCollectExitCode: number;
     private collectStatusSubscription: Subscription;
+    private autoTempRefreshSubscription: Subscription;
     private collectBaselineTimestamp = 0;
 
     // Private
@@ -142,6 +146,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
         if (this.collectStatusSubscription) {
             this.collectStatusSubscription.unsubscribe();
         }
+        this.stopAutoTempRefresh();
         // Unsubscribe from all subscriptions
         this._unsubscribeAll.next();
         this._unsubscribeAll.complete();
@@ -294,24 +299,26 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
         });
     }
 
-    refreshTemperature(): void {
+    refreshTemperature(showToast: boolean = true): void {
         this.collectBaselineTimestamp = this.latestCollectorTimestamp();
         this.collectRunning = true;
         this._changeDetectorRef.markForCheck();
-        this._dashboardService.runCollection().subscribe({
+        this._dashboardService.runTemperatureCollection().subscribe({
             next: () => {
-                this.startStatusPolling(true);
+                this.startStatusPolling(true, showToast);
             },
             error: (err) => {
                 this.collectRunning = false;
                 this._changeDetectorRef.markForCheck();
-                const errorText = err?.error?.error || 'Failed to start collection';
-                this._snackBar.open(errorText, 'Close', {duration: 5000});
+                if (showToast) {
+                    const errorText = err?.error?.error || 'Failed to start collection';
+                    this._snackBar.open(errorText, 'Close', {duration: 5000});
+                }
             }
         });
     }
 
-    private startStatusPolling(refreshTempsOnly: boolean): void {
+    private startStatusPolling(refreshTempsOnly: boolean, showToast: boolean = true): void {
         if (this.collectStatusSubscription) {
             this.collectStatusSubscription.unsubscribe();
         }
@@ -334,9 +341,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
 
                 this.refreshAfterCollection(refreshTempsOnly, 0);
 
-                if (status.lastExitCode === 0) {
+                if (showToast && status.lastExitCode === 0) {
                     this._snackBar.open('Collection completed', 'Close', {duration: 4000});
-                } else if (this.lastCollectExitCode !== status.lastExitCode) {
+                } else if (showToast && this.lastCollectExitCode !== status.lastExitCode) {
                     this._snackBar.open(`Collection failed (exit code ${status.lastExitCode})`, 'Close', {duration: 5000});
                 }
                 this.lastCollectExitCode = status.lastExitCode;
@@ -347,9 +354,48 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy
                 }
                 this.collectRunning = false;
                 this._changeDetectorRef.markForCheck();
-                this._snackBar.open('Failed to get collection status', 'Close', {duration: 5000});
+                if (showToast) {
+                    this._snackBar.open('Failed to get collection status', 'Close', {duration: 5000});
+                }
             }
         });
+    }
+
+    onAutoRefreshIntervalChange(minutes: number): void {
+        this.autoRefreshMinutes = minutes;
+        this.stopAutoTempRefresh();
+        this.startAutoTempRefresh();
+        this._changeDetectorRef.markForCheck();
+    }
+
+    @HostListener('document:visibilitychange')
+    onVisibilityChanged(): void {
+        if (document.visibilityState === 'visible') {
+            this.startAutoTempRefresh();
+        } else {
+            this.stopAutoTempRefresh();
+        }
+    }
+
+    private startAutoTempRefresh(): void {
+        if (document.visibilityState !== 'visible' || this.autoRefreshMinutes <= 0 || this.autoTempRefreshSubscription) {
+            return;
+        }
+
+        this.autoTempRefreshSubscription = timer(this.autoRefreshMinutes * 60 * 1000, this.autoRefreshMinutes * 60 * 1000)
+            .pipe(takeUntil(this._unsubscribeAll))
+            .subscribe(() => {
+                if (!this.collectRunning && document.visibilityState === 'visible') {
+                    this.refreshTemperature(false);
+                }
+            });
+    }
+
+    private stopAutoTempRefresh(): void {
+        if (this.autoTempRefreshSubscription) {
+            this.autoTempRefreshSubscription.unsubscribe();
+            this.autoTempRefreshSubscription = null;
+        }
     }
 
     private refreshAfterCollection(refreshTempsOnly: boolean, attempt: number): void {

@@ -16,6 +16,7 @@ export interface CollectRunResponse {
 
 export interface CollectStatusResponse {
     running: boolean;
+    mode?: string;
     startedAt?: string;
     finishedAt?: string;
     lastExitCode?: number;
@@ -86,6 +87,10 @@ export class DashboardService {
 
     runCollection(): Observable<CollectRunResponse> {
         return this._httpClient.post<CollectRunResponse>(getBasePath() + '/api/collect/run', {});
+    }
+
+    runTemperatureCollection(): Observable<CollectRunResponse> {
+        return this._httpClient.post<CollectRunResponse>(getBasePath() + '/api/collect/run-temp', {});
     }
 
     getCollectionStatus(): Observable<CollectStatusResponse> {

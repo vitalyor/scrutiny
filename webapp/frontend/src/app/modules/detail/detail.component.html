@@ -23,6 +23,13 @@
                               [svgIcon]="'tune'"></mat-icon>
                     <span class="ml-2">Settings</span>
                 </button>
+                <button class="ml-2 xs:hidden"
+                        [disabled]="collectRunning"
+                        (click)="refreshTemperature()"
+                        mat-stroked-button>
+                    <mat-icon class="icon-size-20" [svgIcon]="'refresh'"></mat-icon>
+                    <span class="ml-2">{{ collectRunning ? 'Collecting…' : 'Refresh temperature' }}</span>
+                </button>
 
                 <!-- Actions menu (visible on xs) -->
                 <div class="hidden xs:flex">
@@ -42,6 +49,13 @@
                             <mat-icon class="icon-size-20 rotate-90 mirror"
                                       [svgIcon]="'tune'"></mat-icon>
                             <span class="ml-2">Settings</span>
+                        </button>
+                        <button mat-menu-item
+                                [disabled]="collectRunning"
+                                (click)="refreshTemperature()">
+                            <mat-icon class="icon-size-20"
+                                      [svgIcon]="'refresh'"></mat-icon>
+                            <span class="ml-2">{{ collectRunning ? 'Collecting…' : 'Refresh temperature' }}</span>
                         </button>
                     </mat-menu>
                 </div>

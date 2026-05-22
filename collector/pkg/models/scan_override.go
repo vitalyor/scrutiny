@@ -7,5 +7,6 @@ type ScanOverride struct {
 	Commands   struct {
 		MetricsInfoArgs  string `mapstructure:"metrics_info_args"`
 		MetricsSmartArgs string `mapstructure:"metrics_smart_args"`
+		MetricsTempArgs  string `mapstructure:"metrics_temp_args"`
 	} `mapstructure:"commands"`
 }

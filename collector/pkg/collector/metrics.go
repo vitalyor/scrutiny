@@ -45,6 +45,14 @@ func CreateMetricsCollector(appConfig config.Interface, logger *logrus.Entry, ap
 }
 
 func (mc *MetricsCollector) Run() error {
+	return mc.runWithMode(false)
+}
+
+func (mc *MetricsCollector) RunTemperatureOnly() error {
+	return mc.runWithMode(true)
+}
+
+func (mc *MetricsCollector) runWithMode(temperatureOnly bool) error {
 	err := mc.Validate()
 	if err != nil {
 		return err
@@ -98,7 +106,11 @@ func (mc *MetricsCollector) Run() error {
 			// execute collection in parallel go-routines
 			//wg.Add(1)
 			//go mc.Collect(&wg, device.WWN, device.DeviceName, device.DeviceType)
-			mc.Collect(device.ScrutinyUUID, device.DeviceName, device.DeviceType)
+			if temperatureOnly {
+				mc.CollectTemperature(device.ScrutinyUUID, device.DeviceName, device.DeviceType)
+			} else {
+				mc.Collect(device.ScrutinyUUID, device.DeviceName, device.DeviceType)
+			}
 
 			if mc.config.GetInt("commands.metrics_smartctl_wait") > 0 {
 				time.Sleep(time.Duration(mc.config.GetInt("commands.metrics_smartctl_wait")) * time.Second)
@@ -133,10 +145,29 @@ func (mc *MetricsCollector) Collect(scrutiny_uuid uuid.UUID, deviceName string, 
 		mc.logger.Errorf("Device %s has no scrutiny UUID; skipping collection (no data association possible).", deviceName)
 		return
 	}
-	mc.logger.Infof("Collecting smartctl results for %s\n", deviceName)
+	mc.logger.Infof("Collecting full smartctl results for %s\n", deviceName)
 
+	mc.collectWithArgs(scrutiny_uuid, deviceName, deviceType, mc.config.GetCommandMetricsSmartArgs)
+}
+
+func (mc *MetricsCollector) CollectTemperature(scrutiny_uuid uuid.UUID, deviceName string, deviceType string) {
+	if scrutiny_uuid.IsNil() {
+		mc.logger.Errorf("Device %s has no scrutiny UUID; skipping collection (no data association possible).", deviceName)
+		return
+	}
+	mc.logger.Infof("Collecting temperature smartctl results for %s\n", deviceName)
+
+	mc.collectWithArgs(scrutiny_uuid, deviceName, deviceType, func(fullDeviceName string) string {
+		if cfg, ok := mc.config.(interface{ GetCommandMetricsTempArgs(string) string }); ok {
+			return cfg.GetCommandMetricsTempArgs(fullDeviceName)
+		}
+		return mc.config.GetString("commands.metrics_temp_args")
+	})
+}
+
+func (mc *MetricsCollector) collectWithArgs(scrutiny_uuid uuid.UUID, deviceName string, deviceType string, argsResolver func(string) string) {
 	fullDeviceName := fmt.Sprintf("%s%s", detect.DevicePrefix(), deviceName)
-	args := strings.Split(mc.config.GetCommandMetricsSmartArgs(fullDeviceName), " ")
+	args := strings.Split(argsResolver(fullDeviceName), " ")
 	//only include the device type if its a non-standard one. In some cases ata drives are detected as scsi in docker, and metadata is lost.
 	if len(deviceType) > 0 && deviceType != "scsi" && deviceType != "ata" {
 		args = append(args, "--device", deviceType)
