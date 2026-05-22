@@ -1,0 +1,41 @@
+# syntax=docker/dockerfile:1.4
+########################################################################################################################
+# Web Image
+########################################################################################################################
+
+######## Build the frontend
+FROM --platform=${BUILDPLATFORM} node AS frontendbuild
+WORKDIR /go/src/github.com/analogj/scrutiny
+COPY --link Makefile /go/src/github.com/analogj/scrutiny/
+COPY --link webapp/frontend /go/src/github.com/analogj/scrutiny/webapp/frontend
+
+RUN make binary-frontend
+
+######## Build the backend
+FROM golang:1.25-trixie as backendbuild
+
+WORKDIR /go/src/github.com/analogj/scrutiny
+COPY --link Makefile /go/src/github.com/analogj/scrutiny/
+COPY --link go.mod go.sum /go/src/github.com/analogj/scrutiny/
+COPY --link collector /go/src/github.com/analogj/scrutiny/collector
+COPY --link webapp/backend /go/src/github.com/analogj/scrutiny/webapp/backend
+
+RUN apt-get update && apt-get install -y file && rm -rf /var/lib/apt/lists/*
+RUN make binary-clean binary-all WEB_BINARY_NAME=scrutiny
+
+
+######## Combine build artifacts in runtime image
+FROM debian:trixie-slim as runtime
+EXPOSE 8080
+WORKDIR /opt/scrutiny
+ENV PATH="/opt/scrutiny/bin:${PATH}"
+
+RUN apt-get update && apt-get install -y ca-certificates curl tzdata && rm -rf /var/lib/apt/lists/* && update-ca-certificates
+
+COPY --link --from=backendbuild --chmod=755 /go/src/github.com/analogj/scrutiny/scrutiny /opt/scrutiny/bin/
+COPY --link --from=frontendbuild --chmod=644 /go/src/github.com/analogj/scrutiny/dist /opt/scrutiny/web
+RUN mkdir -p /opt/scrutiny/web && \
+    mkdir -p /opt/scrutiny/config && \
+    chmod -R a+rX /opt/scrutiny && \
+    chmod -R a+w /opt/scrutiny/config
+CMD ["/opt/scrutiny/bin/scrutiny", "start"]

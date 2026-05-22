@@ -1,0 +1,89 @@
+
+// SQLite Table(s)
+
+Table Device  {
+    Archived bool
+	//GORM attributes, see: http://gorm.io/docs/conventions.html
+	CreatedAt time
+	UpdatedAt time
+	DeletedAt time
+
+	WWN string
+
+	DeviceName     string
+	DeviceUUID     string
+	DeviceSerialID string
+	DeviceLabel    string
+
+	Manufacturer   string
+	ModelName      string
+	InterfaceType  string
+	InterfaceSpeed string
+	SerialNumber   string
+	Firmware       string
+	RotationSpeed  int
+	Capacity       int64
+	FormFactor     string
+	SmartSupport   bool
+	DeviceProtocol string//protocol determines which smart attribute types are available (ATA, NVMe, SCSI)
+	DeviceType     string//device type is used for querying with -d/t flag, should only be used by collector.
+
+	// User provided metadata
+	Label  string
+	HostId string
+
+	// Data set by Scrutiny
+	DeviceStatus enum
+}
+
+Table Setting {
+	//GORM attributes, see: http://gorm.io/docs/conventions.html
+
+	SettingKeyName  string
+    SettingKeyDescription  string
+	SettingDataType string
+
+	SettingValueNumeric int64
+	SettingValueString  string
+}
+
+
+// InfluxDB Tables
+Table SmartTemperature {
+    Date time
+	DeviceWWN      string //(tag)
+	Temp int64
+}
+
+
+Table Smart {
+    Date           time
+	DeviceWWN      string //(tag)
+	DeviceProtocol string
+
+	//Metrics (fields)
+	Temp            int64
+	PowerOnHours    int64
+	PowerCycleCount int64
+
+	//Smart Status
+	Status enum
+
+	//SMART Attributes (fields)
+	Attr_ID_AttributeId int
+	Attr_ID_Value       int64
+	Attr_ID_Threshold   int64
+	Attr_ID_Worst       int64
+    Attr_ID_RawValue    int64
+	Attr_ID_RawString   string
+	Attr_ID_WhenFailed  string
+	//Generated data
+	Attr_ID_TransformedValue int64
+	Attr_ID_Status           enum
+	Attr_ID_StatusReason     string
+	Attr_ID_FailureRate      float64
+
+ }
+
+Ref: Device.WWN < Smart.DeviceWWN
+Ref: Device.WWN < SmartTemperature.DeviceWWN

@@ -1,0 +1,158 @@
+name: CI
+# This workflow is triggered on pushes & pull requests
+on:
+  push:
+    branches:
+      -  master
+  pull_request: 
+
+permissions:
+  contents: read
+
+jobs:
+  test-frontend:
+    name: Test Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Test Frontend
+        run: |
+          make binary-frontend-test-coverage
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: ${{ github.workspace }}/webapp/frontend/coverage/lcov.info
+          retention-days: 1
+  test-backend:
+    name: Test Backend
+    runs-on: ubuntu-latest
+    # Service containers to run with `build` (Required for end-to-end testing)
+    services:
+      influxdb:
+        image: influxdb:2.8
+        env:
+          DOCKER_INFLUXDB_INIT_MODE: setup
+          DOCKER_INFLUXDB_INIT_USERNAME: admin
+          DOCKER_INFLUXDB_INIT_PASSWORD: password12345
+          DOCKER_INFLUXDB_INIT_ORG: scrutiny
+          DOCKER_INFLUXDB_INIT_BUCKET: metrics
+          DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: my-super-secret-auth-token
+        ports:
+          - 8086:8086
+    env:
+      STATIC: true
+    steps:
+      - name: Add influxdb to hosts
+        run: echo "127.0.0.1 influxdb" | sudo tee -a /etc/hosts
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Test Backend
+        run: |
+          make binary-clean binary-test-coverage
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: ${{ github.workspace }}/coverage.txt
+          retention-days: 1
+  test-coverage:
+    name: Test Coverage Upload
+    needs:
+      - test-backend
+      - test-frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Download coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ github.workspace }}/coverage.txt,${{ github.workspace }}/lcov.info
+          flags: unittests
+          fail_ci_if_error: true
+          verbose: true
+
+  golangci:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.25
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --issues-exit-code=0
+
+  build:
+    name: Build ${{ matrix.cfg.goos }}/${{ matrix.cfg.goarch }}
+    runs-on: ${{ matrix.cfg.on }}
+    env:
+      GOOS: ${{ matrix.cfg.goos }}
+      GOARCH: ${{ matrix.cfg.goarch }}
+      GOARM: ${{ matrix.cfg.goarm }}
+      STATIC: true
+    strategy:
+      matrix:
+        cfg:
+          - { on: ubuntu-latest,  goos: linux,      goarch: amd64 }
+          - { on: ubuntu-latest,  goos: linux,      goarch: arm,    goarm: 5 }
+          - { on: ubuntu-latest,  goos: linux,      goarch: arm,    goarm: 6 }
+          - { on: ubuntu-latest,  goos: linux,      goarch: arm,    goarm: 7 }
+          - { on: ubuntu-latest,  goos: linux,      goarch: arm64 }
+          - { on: macos-latest,   goos: darwin,     goarch: amd64 }
+          - { on: macos-latest,   goos: darwin,     goarch: arm64 }
+          - { on: macos-latest,   goos: freebsd,    goarch: amd64 }
+          - { on: windows-latest, goos: windows,    goarch: amd64 }
+          - { on: windows-latest, goos: windows,    goarch: arm64 }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '^1.25'
+      - name: Build Binaries
+        run: |
+          make binary-clean binary-all
+      - name: Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.cfg.on }}-${{ matrix.cfg.goos }}-${{ matrix.cfg.goarch }}-${{ matrix.cfg.goarm || 'na' }}.zip
+          path: |
+            scrutiny-web-*
+            scrutiny-collector-metrics-*
+
+  makefile-docker-omnibus:
+    name: Build Docker Omnibus From Makefile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Build
+        run: make docker-omnibus
+
+  makefile-docker-web:
+    name: Build Docker Web From Makefile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Build
+        run: make docker-web
+
+  makefile-docker-collector:
+    name: Build Docker Collector From Makefile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Build
+        run: make docker-collector
