@@ -45,6 +45,18 @@
                         <mat-icon class="icon-size-20" [svgIcon]="'refresh'"></mat-icon>
                         <span class="ml-2">Refresh temperature</span>
                     </button>
+                    <button class="ml-2 xs:hidden"
+                            mat-stroked-button
+                            [matMenuTriggerFor]="autoTempMenu">
+                        <mat-icon class="icon-size-20" [svgIcon]="'schedule'"></mat-icon>
+                        <span class="ml-2">Auto temp: {{ autoRefreshMinutes === 0 ? 'off' : (autoRefreshMinutes + 'm') }}</span>
+                    </button>
+                    <mat-menu #autoTempMenu="matMenu">
+                        <button mat-menu-item *ngFor="let minutes of autoRefreshOptions"
+                                (click)="onAutoRefreshIntervalChange(minutes)">
+                            {{ minutes === 0 ? 'Off' : (minutes + ' min') }}
+                        </button>
+                    </mat-menu>
 
                     <!-- Actions menu (visible on xs) -->
                     <div class="hidden xs:flex">
@@ -84,6 +96,16 @@
                                 <mat-icon class="icon-size-20"
                                           [svgIcon]="'refresh'"></mat-icon>
                                 <span class="ml-2">Refresh temperature</span>
+                            </button>
+                            <button mat-menu-item [matMenuTriggerFor]="autoTempMenuMobile">
+                                <mat-icon class="icon-size-20" [svgIcon]="'schedule'"></mat-icon>
+                                <span class="ml-2">Auto temp: {{ autoRefreshMinutes === 0 ? 'off' : (autoRefreshMinutes + 'm') }}</span>
+                            </button>
+                        </mat-menu>
+                        <mat-menu #autoTempMenuMobile="matMenu">
+                            <button mat-menu-item *ngFor="let minutes of autoRefreshOptions"
+                                    (click)="onAutoRefreshIntervalChange(minutes)">
+                                {{ minutes === 0 ? 'Off' : (minutes + ' min') }}
                             </button>
                         </mat-menu>
                     </div>

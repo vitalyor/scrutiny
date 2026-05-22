@@ -14,6 +14,7 @@ import { MatTooltipModule } from '@angular/material/tooltip'
 import { NgApexchartsModule } from 'ng-apexcharts';
 import { TreoCardModule } from '@treo/components/card';
 import {DetailSettingsModule} from 'app/layout/common/detail-settings/detail-settings.module';
+import { MatSnackBarModule } from '@angular/material/snack-bar';
 
 @NgModule({
     declarations: [
@@ -29,6 +30,7 @@ import {DetailSettingsModule} from 'app/layout/common/detail-settings/detail-set
         MatProgressBarModule,
         MatSortModule,
         MatTableModule,
+        MatSnackBarModule,
         NgApexchartsModule,
         TreoCardModule,
         SharedModule,

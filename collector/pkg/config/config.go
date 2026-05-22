@@ -48,6 +48,7 @@ func (c *configuration) Init() error {
 	c.SetDefault("commands.metrics_scan_args", "--scan --json")
 	c.SetDefault("commands.metrics_info_args", "--info --json")
 	c.SetDefault("commands.metrics_smart_args", "--xall --json")
+	c.SetDefault("commands.metrics_temp_args", "--attributes --json")
 	c.SetDefault("commands.metrics_smartctl_wait", 0)
 
 	//configure env variable parsing.
@@ -114,6 +115,7 @@ func (c *configuration) ValidateConfig() error {
 		"commands.metrics_scan_args":  c.GetString("commands.metrics_scan_args"),
 		"commands.metrics_info_args":  c.GetString("commands.metrics_info_args"),
 		"commands.metrics_smart_args": c.GetString("commands.metrics_smart_args"),
+		"commands.metrics_temp_args":  c.GetString("commands.metrics_temp_args"),
 	}
 
 	errorStrings := []string{}
@@ -194,6 +196,26 @@ func (c *configuration) GetCommandMetricsSmartArgs(deviceName string) string {
 		}
 	}
 	return c.GetString("commands.metrics_smart_args")
+}
+
+func (c *configuration) GetCommandMetricsTempArgs(deviceName string) string {
+	overrides := c.GetDeviceOverrides()
+
+	for _, deviceOverrides := range overrides {
+		if strings.EqualFold(deviceName, deviceOverrides.Device) {
+			if len(deviceOverrides.Commands.MetricsTempArgs) > 0 {
+				return deviceOverrides.Commands.MetricsTempArgs
+			}
+
+			if len(deviceOverrides.Commands.MetricsSmartArgs) > 0 {
+				return deviceOverrides.Commands.MetricsSmartArgs
+			}
+
+			return c.GetString("commands.metrics_temp_args")
+		}
+	}
+
+	return c.GetString("commands.metrics_temp_args")
 }
 
 func (c *configuration) IsAllowlistedDevice(deviceName string) bool {

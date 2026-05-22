@@ -58,6 +58,7 @@ func (ae *AppEngine) Setup(logger *logrus.Entry) *gin.Engine {
 			api.POST("/settings", handler.SaveSettings) //used to save settings
 
 			api.POST("/collect/run", handler.CollectRun)
+			api.POST("/collect/run-temp", handler.CollectRunTemp)
 			api.GET("/collect/status", handler.CollectStatus)
 		}
 	}

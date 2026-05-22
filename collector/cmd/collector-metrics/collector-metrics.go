@@ -148,6 +148,9 @@ OPTIONS:
 						return err
 					}
 
+					if c.Bool("temperature-only") {
+						return metricCollector.RunTemperatureOnly()
+					}
 					return metricCollector.Run()
 				},
 
@@ -180,6 +183,11 @@ OPTIONS:
 						Usage:   "Host identifier/label, used for grouping devices",
 						Value:   "",
 						EnvVars: []string{"COLLECTOR_HOST_ID"},
+					},
+					&cli.BoolFlag{
+						Name:    "temperature-only",
+						Usage:   "Collect only temperature-related SMART attributes for faster sampling",
+						EnvVars: []string{"COLLECTOR_TEMPERATURE_ONLY"},
 					},
 				},
 			},

@@ -8,15 +8,19 @@ import {MatDialog} from '@angular/material/dialog';
 import {MatSort} from '@angular/material/sort';
 import {MatTableDataSource} from '@angular/material/table';
 import {Subject} from 'rxjs';
+import {Subscription, timer} from 'rxjs';
 import {ScrutinyConfigService} from 'app/core/config/scrutiny-config.service';
 import {animate, state, style, transition, trigger} from '@angular/animations';
 import {formatDate} from '@angular/common';
 import {takeUntil} from 'rxjs/operators';
+import {switchMap} from 'rxjs/operators';
 import {DeviceModel} from 'app/core/models/device-model';
 import {SmartModel} from 'app/core/models/measurements/smart-model';
 import {SmartAttributeModel} from 'app/core/models/measurements/smart-attribute-model';
 import {AttributeMetadataModel} from 'app/core/models/thresholds/attribute-metadata-model';
 import {DeviceStatusPipe} from 'app/shared/device-status.pipe';
+import {DashboardService} from 'app/modules/dashboard/dashboard.service';
+import {MatSnackBar} from '@angular/material/snack-bar';
 
 // from Constants.go - these must match
 const AttributeStatusPassed = 0
@@ -50,8 +54,10 @@ export class DetailComponent implements OnInit, AfterViewInit, OnDestroy {
      */
     constructor(
         private _detailService: DetailService,
+        private _dashboardService: DashboardService,
         public dialog: MatDialog,
         private _configService: ScrutinyConfigService,
+        private _snackBar: MatSnackBar,
         @Inject(LOCALE_ID) public locale: string
     ) {
         // Set the private defaults
@@ -87,6 +93,8 @@ export class DetailComponent implements OnInit, AfterViewInit, OnDestroy {
     // Private
     private _unsubscribeAll: Subject<void>;
     private systemPrefersDark: boolean;
+    collectRunning = false;
+    private collectStatusSubscription: Subscription;
 
     readonly humanizeDuration = humanizeDuration;
 
@@ -139,9 +147,51 @@ export class DetailComponent implements OnInit, AfterViewInit, OnDestroy {
      * On destroy
      */
     ngOnDestroy(): void {
+        if (this.collectStatusSubscription) {
+            this.collectStatusSubscription.unsubscribe();
+        }
         // Unsubscribe from all subscriptions
         this._unsubscribeAll.next();
         this._unsubscribeAll.complete();
+    }
+
+    refreshTemperature(): void {
+        this.collectRunning = true;
+        this._dashboardService.runTemperatureCollection().subscribe({
+            next: () => this.startStatusPolling(),
+            error: (err) => {
+                this.collectRunning = false;
+                const errorText = err?.error?.error || 'Failed to start collection';
+                this._snackBar.open(errorText, 'Close', {duration: 5000});
+            }
+        });
+    }
+
+    private startStatusPolling(): void {
+        if (this.collectStatusSubscription) {
+            this.collectStatusSubscription.unsubscribe();
+        }
+
+        this.collectStatusSubscription = timer(0, 2000).pipe(
+            switchMap(() => this._dashboardService.getCollectionStatus()),
+            takeUntil(this._unsubscribeAll)
+        ).subscribe((status) => {
+            this.collectRunning = status.running;
+            if (status.running) {
+                return;
+            }
+
+            if (this.collectStatusSubscription) {
+                this.collectStatusSubscription.unsubscribe();
+            }
+
+            this._detailService.getData(this.device.scrutiny_uuid).subscribe();
+            if (status.lastExitCode === 0) {
+                this._snackBar.open('Collection completed', 'Close', {duration: 4000});
+            } else {
+                this._snackBar.open(`Collection failed (exit code ${status.lastExitCode})`, 'Close', {duration: 5000});
+            }
+        });
     }
 
     // -----------------------------------------------------------------------------------------------------
